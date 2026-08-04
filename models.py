@@ -1,6 +1,6 @@
 """Model architectures and checkpoint loading."""
 
-import sys
+import pickle
 
 import torch
 import torch.nn as nn
@@ -54,8 +54,31 @@ class CustomCNN(nn.Module):
 # was named ``CNN`` in ``__main__``, so unpickling looks for ``__main__.CNN``.
 # Its module layout is identical to CustomCNN (a single ``layers`` Sequential),
 # and pickle restores the submodules themselves rather than re-running
-# __init__, so pointing the name at CustomCNN reconstructs it exactly.
-sys.modules["__main__"].CNN = CustomCNN
+# __init__, so resolving the name to CustomCNN reconstructs it exactly.
+PICKLE_CLASS_ALIASES = {("__main__", "CNN"): CustomCNN}
+
+
+class _AliasingUnpickler(pickle.Unpickler):
+    """Resolves checkpoint classes that no longer live where they were saved.
+
+    Injecting the name into ``__main__`` instead would not survive Streamlit,
+    which builds a fresh ``__main__`` module on every script rerun while
+    leaving this module's import-time state untouched.
+    """
+
+    def find_class(self, module, name):
+        alias = PICKLE_CLASS_ALIASES.get((module, name))
+        if alias is not None:
+            return alias
+        return super().find_class(module, name)
+
+
+class _aliasing_pickle:
+    """Duck-types the ``pickle`` module for ``torch.load(pickle_module=…)``."""
+
+    Unpickler = _AliasingUnpickler
+    load = pickle.load
+    loads = pickle.loads
 
 
 def _decoder_block(in_channels, out_channels):
@@ -153,7 +176,10 @@ def load_classifier(scheme, architecture, progress_hook=None):
         state_dict = torch.load(path, map_location=DEVICE, weights_only=True)
         model.load_state_dict(state_dict)
     else:
-        model = torch.load(path, map_location=DEVICE, weights_only=False)
+        model = torch.load(
+            path, map_location=DEVICE, weights_only=False,
+            pickle_module=_aliasing_pickle,
+        )
 
     model = model.to(DEVICE)
     model.eval()
