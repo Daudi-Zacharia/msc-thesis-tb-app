@@ -82,8 +82,7 @@ uploading anything.
 
 ## Hosted version
 
-<!-- TODO: replace with the deployed URL, or drop this section -->
-A live-hosted version may be added later — URL to follow.
+A live-hosted version can be accessed [here](https://msc-thesis-tb.streamlit.app/)
 
 ## Layout
 
