@@ -1,58 +1,67 @@
-"""Streamlit front end for the TB chest X-ray classifier."""
+"""Streamlit front end for the TB chest X-ray classification/segmentation tool."""
 
 import streamlit as st
 from PIL import Image
 
 import inference
 import models
-from config import ARCHITECTURES
+from config import ARCHITECTURES, MODES
 
-st.set_page_config(page_title="TB Classifier", layout="wide")
+st.set_page_config(page_title="TB Chest X-ray Analyser", layout="wide")
 
-st.title("🫁 Tuberculosis Detection from Chest X-ray")
-st.markdown(
-    "Upload a chest X-ray image and the model will predict whether it shows "
-    "signs of **Tuberculosis (TB)**."
-)
+st.title("🫁 TB Chest X-ray Analyser")
 st.divider()
 
-st.markdown("## 📤 Input")
-col_model, col_upload = st.columns([1, 1])
-with col_model:
-    architecture = st.selectbox("Choose a model", ARCHITECTURES)
-with col_upload:
-    uploaded_file = st.file_uploader("Upload X-ray image", type=["jpg", "jpeg", "png"])
+mode = st.radio("Mode", list(MODES.keys()))
+mode_config = MODES[mode]
 
+architecture = None
+if mode_config["classify"]:
+    architecture = st.selectbox("Classification model", ARCHITECTURES)
+
+uploaded_file = st.file_uploader("Upload X-ray image", type=["jpg", "jpeg", "png"])
 if uploaded_file is None:
     st.info("Please upload a chest X-ray image to begin.")
     st.stop()
 
 image = Image.open(uploaded_file).convert("RGB")
 
-with st.spinner(f"Loading {architecture}…"):
-    model, target_layer = models.load_classifier("oversampling", architecture)
+# In "Segment then classify" the classifier sees the segmented image, which is
+# also what the matching (segmented-scheme) checkpoints were trained on.
+model_input = image
+segmented = None
+if mode_config["segment"]:
+    with st.spinner("Loading U-Net…"):
+        unet = models.load_segmenter()
+    with st.spinner("Segmenting lungs…"):
+        segmented, _ = inference.segment(unet, image)
+    model_input = segmented
 
-with st.spinner("Analyzing image…"):
-    tensor = inference.preprocess(image, architecture)
-    label, confidence, index = inference.classify(model, tensor)
-    display = inference.as_display_array(image, architecture)
-    overlay = inference.blend_cam(
-        display, inference.grad_cam(model, target_layer, tensor, index)
-    )
+    st.divider()
+    st.markdown("## Segmentation")
+    st.image(segmented, use_container_width=True)
 
-st.divider()
-st.markdown("## 🧠 Prediction")
-if label == "TB":
-    st.error(f"⚠️ **TB Detected** — Confidence: {confidence:.2%}")
-else:
-    st.success(f"✅ **Normal** — Confidence: {confidence:.2%}")
+if mode_config["classify"]:
+    scheme = mode_config["scheme"]
+    with st.spinner(f"Loading {architecture} ({scheme})…"):
+        model, target_layer = models.load_classifier(scheme, architecture)
 
-st.divider()
-st.markdown("## 🔍 Model Explanation")
-left, right = st.columns([1, 1])
-with left:
-    st.markdown("### Original Chest X-ray")
-    st.image(image, use_container_width=True)
-with right:
-    st.markdown("### Grad-CAM Heatmap")
+    with st.spinner("Running inference…"):
+        tensor = inference.preprocess(model_input, architecture)
+        label, confidence, index = inference.classify(model, tensor)
+        # Grad-CAM comes from the tensor the model saw, but is drawn over the
+        # original X-ray — a masked image is mostly black and unreadable.
+        display = inference.as_display_array(image, architecture)
+        overlay = inference.blend_cam(
+            display, inference.grad_cam(model, target_layer, tensor, index)
+        )
+
+    st.divider()
+    st.markdown("## Prediction")
+    if label == "TB":
+        st.error(f"⚠️ **TB Detected** — Confidence: {confidence:.2%}")
+    else:
+        st.success(f"✅ **Normal** — Confidence: {confidence:.2%}")
+
+    st.markdown("## Grad-CAM")
     st.image(overlay, use_container_width=True)
