@@ -4,6 +4,8 @@ A Streamlit research prototype that segments the lung fields of a chest X-ray,
 classifies it as **Normal** or **Tuberculosis**, and explains the prediction
 with a Grad-CAM heatmap.
 
+A live-hosted version can be accessed [here](https://msc-thesis-tb.streamlit.app/)
+
 > **Research prototype — not a diagnostic tool. Do not use for clinical
 > decision-making.**
 
@@ -79,10 +81,6 @@ streamlit run app.py
 Sample chest X-rays live under `sample_images/tb/` and `sample_images/normal/`
 and can be loaded from the sidebar's "…or try an example" selector without
 uploading anything.
-
-## Hosted version
-
-A live-hosted version can be accessed [here](https://msc-thesis-tb.streamlit.app/)
 
 ## Layout
 
